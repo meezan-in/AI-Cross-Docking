@@ -200,6 +200,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Calculate new capacity usage
       const newCapacityUsed = fleet.currentCapacityUsed + pkg.weight;
+      if (newCapacityUsed > fleet.capacity) {
+        return res
+          .status(400)
+          .json({ error: "Cannot assign package: Fleet capacity exceeded." });
+      }
       let newStatus = fleet.status;
 
       if (newCapacityUsed >= fleet.capacity) {
@@ -677,6 +682,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.put("/api/scheduled-tasks/:id", authMiddleware, async (req, res) => {
     res.json(await storage.updateScheduledTask(req.params.id, req.body));
+  });
+  app.delete("/api/scheduled-tasks/:id", authMiddleware, async (req, res) => {
+    try {
+      const success = await storage.deleteScheduledTask(req.params.id);
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Scheduled task not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete scheduled task" });
+    }
   });
 
   // Bulk import/export for packages (CSV)

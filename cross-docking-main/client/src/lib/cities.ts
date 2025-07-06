@@ -17,6 +17,15 @@ export const indianCities = [
   "Kochi",
   "Coimbatore",
   "Mysore",
+  "Thane",
+  "Patna",
+  "Vadodara",
+  "Ghaziabad",
+  "Ludhiana",
+  "Agra",
+  "Nashik",
+  "Faridabad",
+  "Meerut",
 ];
 
 export const cityCoordinates: Record<string, { lat: number; lon: number }> = {
@@ -52,4 +61,13 @@ export const cityCoordinates: Record<string, { lat: number; lon: number }> = {
   Azamgarh: { lat: 26.0676, lon: 83.1836 },
   Jalaun: { lat: 26.1451, lon: 79.3366 },
   Dibrugarh: { lat: 27.4728, lon: 94.912 },
+  Thane: { lat: 19.21833, lon: 72.978088 },
+  Patna: { lat: 25.612677, lon: 85.158875 },
+  Vadodara: { lat: 22.310696, lon: 73.192635 },
+  Ghaziabad: { lat: 28.667856, lon: 77.449791 },
+  Ludhiana: { lat: 30.900965, lon: 75.857277 },
+  Agra: { lat: 27.17667, lon: 78.008072 },
+  Nashik: { lat: 19.983, lon: 73.8 },
+  Faridabad: { lat: 28.4089, lon: 77.3178 },
+  Meerut: { lat: 28.984644, lon: 77.705956 },
 };

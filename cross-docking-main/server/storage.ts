@@ -54,6 +54,7 @@ export interface IStorage {
     id: string,
     updates: Partial<ScheduledTask>
   ): Promise<ScheduledTask | null>;
+  deleteScheduledTask(id: string): Promise<boolean>;
 }
 
 export interface AdminUser {
@@ -279,6 +280,13 @@ export class MongoStorage implements IStorage {
       { returnDocument: "after" }
     );
     return result ? { ...result, _id: result._id?.toString() } : null;
+  }
+
+  async deleteScheduledTask(id: string): Promise<boolean> {
+    const result = await this.scheduledTasks.deleteOne({
+      _id: new ObjectId(id),
+    });
+    return result.deletedCount > 0;
   }
 }
 

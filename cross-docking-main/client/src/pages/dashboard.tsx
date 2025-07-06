@@ -13,10 +13,10 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import {
-  Package,
-  Truck,
-  Clock,
+import { 
+  Package, 
+  Truck, 
+  Clock, 
   Route,
   Plus,
   ChartLine,
@@ -65,6 +65,13 @@ import {
 } from "chart.js";
 import { useToast } from "@/hooks/use-toast";
 import Papa from "papaparse";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 ChartJS.register(
   CategoryScale,
@@ -252,6 +259,8 @@ export default function Dashboard() {
   const [importLoading, setImportLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [taskLoading, setTaskLoading] = useState(false);
+  const [editTaskModalOpen, setEditTaskModalOpen] = useState(false);
+  const [editTask, setEditTask] = useState<any>(null);
 
   const { data: packages = [], refetch: refetchPackages } = useQuery<
     PackageType[]
@@ -630,6 +639,102 @@ export default function Dashboard() {
   );
   const [customSchedule, setCustomSchedule] = useState("");
 
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm("Are you sure you want to delete this scheduled task?"))
+      return;
+    try {
+      const res = await fetch(`/api/scheduled-tasks/${taskId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
+        },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({
+          title: "Delete Failed",
+          description: err.error || "Unknown error.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Refresh tasks
+      const fetchRes = await handleAuthResponse(
+        await fetch("/api/scheduled-tasks", {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
+          },
+        })
+      );
+      setScheduledTasks(await fetchRes.json());
+      toast({
+        title: "Task Deleted",
+        description: "Scheduled task deleted successfully.",
+        variant: "success",
+      });
+    } catch (err) {
+      toast({
+        title: "Delete Error",
+        description: String(err),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditTask = (task: any) => {
+    setEditTask(task);
+    setEditTaskModalOpen(true);
+  };
+
+  const handleEditTaskSave = async () => {
+    if (!editTask) return;
+    try {
+      setTaskLoading(true);
+      const res = await fetch(`/api/scheduled-tasks/${editTask._id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
+        },
+        body: JSON.stringify(editTask),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({
+          title: "Update Failed",
+          description: err.error || "Unknown error.",
+          variant: "destructive",
+        });
+        setTaskLoading(false);
+        return;
+      }
+      setEditTaskModalOpen(false);
+      setEditTask(null);
+      // Refresh tasks
+      const fetchRes = await handleAuthResponse(
+        await fetch("/api/scheduled-tasks", {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
+          },
+        })
+      );
+      setScheduledTasks(await fetchRes.json());
+      toast({
+        title: "Task Updated",
+        description: "Scheduled task updated successfully.",
+        variant: "success",
+      });
+    } catch (err) {
+      toast({
+        title: "Update Error",
+        description: String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setTaskLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex bg-background">
       {/* Sidebar: Analytics & Insights Panel */}
@@ -647,7 +752,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-
+        
         {/* Analytics Panel in Sidebar */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {/* Key Stats */}
@@ -659,8 +764,8 @@ export default function Dashboard() {
               <div>
                 <div className="text-xs text-gray-500">Total Packages</div>
                 <div className="text-xl font-bold">{totalPackages}</div>
-              </div>
-            </div>
+          </div>
+          </div>
             <div className="flex items-center mb-3">
               <span className="bg-green-100 p-2 rounded-full mr-3">
                 <Truck className="h-5 w-5 text-green-600" />
@@ -668,8 +773,8 @@ export default function Dashboard() {
               <div>
                 <div className="text-xs text-gray-500">Active Fleet</div>
                 <div className="text-xl font-bold">{activeFleet}</div>
-              </div>
-            </div>
+          </div>
+          </div>
             <div className="flex items-center mb-3">
               <span className="bg-yellow-100 p-2 rounded-full mr-3">
                 <Clock className="h-5 w-5 text-yellow-600" />
@@ -677,8 +782,8 @@ export default function Dashboard() {
               <div>
                 <div className="text-xs text-gray-500">Pending Assignments</div>
                 <div className="text-xl font-bold">{pendingAssignments}</div>
-              </div>
-            </div>
+          </div>
+          </div>
             <div className="flex items-center">
               <span className="bg-purple-100 p-2 rounded-full mr-3">
                 <Route className="h-5 w-5 text-purple-600" />
@@ -686,9 +791,9 @@ export default function Dashboard() {
               <div>
                 <div className="text-xs text-gray-500">Routes Optimized</div>
                 <div className="text-xl font-bold">{routesOptimized}</div>
-              </div>
             </div>
-          </div>
+            </div>
+            </div>
           {/* Modern Analytics Card (replace old card) */}
           <div className="bg-white rounded-xl shadow p-6 flex flex-col border border-gray-100 max-w-sm mx-auto mb-8">
             <div className="flex items-center mb-4">
@@ -710,7 +815,7 @@ export default function Dashboard() {
             <div className="flex items-center mb-4">
               <span className="bg-green-100 p-2 rounded-full mr-3">
                 <span role="img" aria-label="chart">
-                  📊
+                  ��
                 </span>
               </span>
               <div className="flex-1">
@@ -864,8 +969,8 @@ export default function Dashboard() {
               <div className="text-sm text-primary">
                 Interdisciplinary Project | RVCE
               </div>
-              <Button
-                variant="outline"
+              <Button 
+                variant="outline" 
                 size="sm"
                 onClick={logout}
                 className="flex items-center space-x-2"
@@ -913,10 +1018,10 @@ export default function Dashboard() {
                       <Bot className="h-4 w-4 mr-1 animate-bounce" />
                       Assign All with AI
                     </Button>
-                    <Button onClick={() => setShowPackageModal(true)}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Package
-                    </Button>
+                  <Button onClick={() => setShowPackageModal(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Package
+                  </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -959,8 +1064,8 @@ export default function Dashboard() {
                               </TableCell>
                               <TableCell>
                                 {pkg.status === "Pending" && (
-                                  <Button
-                                    variant="outline"
+                                  <Button 
+                                    variant="outline" 
                                     size="sm"
                                     onClick={() => handlePackageAssign(pkg.id)}
                                     className="mr-2"
@@ -969,8 +1074,8 @@ export default function Dashboard() {
                                     Assign
                                   </Button>
                                 )}
-                                <Button
-                                  variant="destructive"
+                                <Button 
+                                  variant="destructive" 
                                   size="sm"
                                   onClick={async () => {
                                     if (
@@ -1039,7 +1144,7 @@ export default function Dashboard() {
                             const hasAssignments = assignments.some(
                               (a) => a.fleetId === f.id
                             );
-
+                            
                             return (
                               <TableRow key={f.id}>
                                 <TableCell className="font-medium">
@@ -1079,20 +1184,20 @@ export default function Dashboard() {
                                     {hasAssignments &&
                                       (f.status === "Partially Loaded" ||
                                         f.status === "Fully Loaded") && (
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm"
                                           onClick={() =>
                                             handleFleetDispatch(f.id)
                                           }
-                                          className="bg-green-50 hover:bg-green-100"
-                                        >
-                                          <Send className="h-4 w-4 mr-1" />
-                                          Dispatch
-                                        </Button>
-                                      )}
-                                    <Button
-                                      variant="destructive"
+                                        className="bg-green-50 hover:bg-green-100"
+                                      >
+                                        <Send className="h-4 w-4 mr-1" />
+                                        Dispatch
+                                      </Button>
+                                    )}
+                                    <Button 
+                                      variant="destructive" 
                                       size="sm"
                                       onClick={async () => {
                                         if (
@@ -1145,24 +1250,24 @@ export default function Dashboard() {
                               key={pkg.id}
                               className="bg-muted p-4 rounded-lg flex justify-between items-center"
                             >
-                              <div>
-                                <p className="font-medium">{pkg.id}</p>
-                                <p className="text-sm text-muted-foreground">
+                            <div>
+                              <p className="font-medium">{pkg.id}</p>
+                              <p className="text-sm text-muted-foreground">
                                   {pkg.destination} • {pkg.weight}kg •{" "}
                                   {pkg.priority}
-                                </p>
-                              </div>
-                              <div className="space-x-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handlePackageAssign(pkg.id)}
-                                >
-                                  <Route className="h-4 w-4" />
-                                </Button>
-                              </div>
+                              </p>
                             </div>
-                          ))
+                            <div className="space-x-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => handlePackageAssign(pkg.id)}
+                              >
+                                <Route className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))
                       )}
                     </div>
                   </CardContent>
@@ -1187,7 +1292,7 @@ export default function Dashboard() {
                           const fleetVehicle = fleet.find(
                             (f) => f.id === assignment.fleetId
                           );
-
+                          
                           return (
                             <div
                               key={assignment.id}
@@ -1204,9 +1309,9 @@ export default function Dashboard() {
                               </div>
                               <div className="space-x-2 flex items-center">
                                 <CountdownTimer assignmentId={assignment.id} />
-                                <Button
-                                  variant="outline"
-                                  size="sm"
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
                                   className="ml-1"
                                 >
                                   Sync with Real GPS
@@ -1223,8 +1328,8 @@ export default function Dashboard() {
                                     <Activity className="h-4 w-4" />
                                   </Button>
                                 )}
-                                <Button
-                                  variant="destructive"
+                                <Button 
+                                  variant="destructive" 
                                   size="sm"
                                   onClick={async () => {
                                     if (
@@ -1264,11 +1369,11 @@ export default function Dashboard() {
                     <div className="bg-muted rounded-lg p-4">
                       <div className="text-sm text-muted-foreground">
                         Total Packages
-                      </div>
+                        </div>
                       <div className="text-2xl font-bold">
                         {analytics.totalPackages}
-                      </div>
-                    </div>
+                            </div>
+                          </div>
                     <div className="bg-muted rounded-lg p-4">
                       <div className="text-sm text-muted-foreground">
                         Delivered
@@ -1328,7 +1433,7 @@ export default function Dashboard() {
                       scales: { y: { beginAtZero: true } },
                     }}
                   />
-                </div>
+                    </div>
                 <button
                   className="bg-primary text-white px-4 py-2 rounded font-semibold hover:bg-primary/90 transition"
                   onClick={() => {
@@ -1371,7 +1476,7 @@ export default function Dashboard() {
                   >
                     Scheduled Tasks
                   </button>
-                </div>
+                        </div>
                 {operationsTab === "import" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {/* Bulk Import/Export Card */}
@@ -1490,7 +1595,7 @@ export default function Dashboard() {
                               </li>
                             ))}
                           </ul>
-                        </div>
+                          </div>
                       )}
                       <div className="flex flex-col md:flex-row gap-2 mt-4">
                         <button
@@ -1543,7 +1648,7 @@ export default function Dashboard() {
                         >
                           <Trash2 className="h-4 w-4" /> Delete All Packages
                         </button>
-                      </div>
+                    </div>
                       <p className="text-xs text-red-500 mt-2">
                         <AlertTriangle className="inline h-4 w-4 mr-1" />
                         <span>
@@ -1719,12 +1824,14 @@ export default function Dashboard() {
                               <button
                                 title="Edit Task"
                                 className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900"
+                                onClick={() => handleEditTask(task)}
                               >
                                 <Edit className="h-4 w-4 text-blue-500" />
                               </button>
                               <button
                                 title="Delete Task"
                                 className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900"
+                                onClick={() => handleDeleteTask(task._id)}
                               >
                                 <Trash2 className="h-4 w-4 text-red-500" />
                               </button>
@@ -1742,20 +1849,20 @@ export default function Dashboard() {
       </div>
 
       {/* Modals */}
-      <PackageModal
-        open={showPackageModal}
+      <PackageModal 
+        open={showPackageModal} 
         onOpenChange={setShowPackageModal}
         onSuccess={refetchAll}
       />
-
-      <FleetModal
-        open={showFleetModal}
+      
+      <FleetModal 
+        open={showFleetModal} 
         onOpenChange={setShowFleetModal}
         onSuccess={refetchAll}
       />
-
-      <AssignmentModal
-        open={showAssignmentModal}
+      
+      <AssignmentModal 
+        open={showAssignmentModal} 
         onOpenChange={setShowAssignmentModal}
         packageId={selectedPackageId}
         packages={packages}
@@ -1766,16 +1873,16 @@ export default function Dashboard() {
           setShowOptimizationModal(true);
         }}
       />
-
-      <RouteOptimizationModal
-        open={showOptimizationModal}
+      
+      <RouteOptimizationModal 
+        open={showOptimizationModal} 
         onOpenChange={setShowOptimizationModal}
         packageId={selectedPackageId}
         onSuccess={refetchAll}
       />
-
-      <DispatchModal
-        open={showDispatchModal}
+      
+      <DispatchModal 
+        open={showDispatchModal} 
         onOpenChange={setShowDispatchModal}
         assignmentId={selectedAssignmentId}
         assignments={assignments}
@@ -1783,9 +1890,9 @@ export default function Dashboard() {
         fleet={fleet}
         onSuccess={refetchAll}
       />
-
-      <FleetDispatchModal
-        open={showFleetDispatchModal}
+      
+      <FleetDispatchModal 
+        open={showFleetDispatchModal} 
         onOpenChange={setShowFleetDispatchModal}
         fleetId={selectedFleetId}
         fleet={fleet}
@@ -1834,6 +1941,71 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Edit Scheduled Task Modal */}
+      <Dialog open={editTaskModalOpen} onOpenChange={setEditTaskModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Scheduled Task</DialogTitle>
+          </DialogHeader>
+          {editTask && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleEditTaskSave();
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block mb-1 font-medium">Type</label>
+                <select
+                  value={editTask.type}
+                  onChange={(e) =>
+                    setEditTask({ ...editTask, type: e.target.value })
+                  }
+                  className="border rounded px-2 py-2 min-w-[120px] text-base"
+                >
+                  <option value="auto_dispatch">Auto Dispatch</option>
+                </select>
+              </div>
+              <div>
+                <label className="block mb-1 font-medium">
+                  Schedule (cron)
+                </label>
+                <input
+                  type="text"
+                  value={editTask.schedule}
+                  onChange={(e) =>
+                    setEditTask({ ...editTask, schedule: e.target.value })
+                  }
+                  className="border rounded px-2 py-2 min-w-[150px] text-base"
+                />
+              </div>
+              <div>
+                <label className="block mb-1 font-medium">Enabled</label>
+                <select
+                  value={editTask.enabled ? "true" : "false"}
+                  onChange={(e) =>
+                    setEditTask({
+                      ...editTask,
+                      enabled: e.target.value === "true",
+                    })
+                  }
+                  className="border rounded px-2 py-2 min-w-[100px] text-base"
+                >
+                  <option value="true">Enabled</option>
+                  <option value="false">Disabled</option>
+                </select>
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={taskLoading}>
+                  {taskLoading ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
