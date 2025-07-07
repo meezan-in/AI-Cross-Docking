@@ -85,9 +85,13 @@ export class MongoStorage implements IStorage {
   private scheduledTasks: Collection<ScheduledTask>;
 
   constructor() {
-    const mongoUri =
-      process.env.MONGODB_URI ||
-      "mongodb+srv://logistics-manager:hello123@cluster0.dczks2z.mongodb.net/";
+    // Set your MongoDB connection string in a .env file as MONGODB_URI
+    const mongoUri = process.env.MONGODB_URI;
+    if (!mongoUri) {
+      throw new Error(
+        "MONGODB_URI environment variable is not set. Please add it to your .env file."
+      );
+    }
     this.client = new MongoClient(mongoUri);
     this.db = this.client.db("bengaluru-logistics");
     this.packages = this.db.collection("packages");
