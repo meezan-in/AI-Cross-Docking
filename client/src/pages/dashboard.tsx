@@ -796,7 +796,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="min-h-screen flex">
       {/* Sidebar: Analytics & Insights Panel */}
       <div className="w-72 bg-card shadow-lg border-r border-border flex flex-col">
         <div className="p-6 border-b border-border">
@@ -816,7 +816,7 @@ export default function Dashboard() {
         {/* Analytics Panel in Sidebar */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {/* Key Stats */}
-          <div className="bg-white rounded-xl shadow p-4 flex flex-col border border-gray-100">
+          <div className="bg-white rounded-xl shadow p-4 flex flex-col border-2 border-black transition-all duration-300 hover:bg-gradient-to-br hover:from-blue-100 hover:to-cyan-100 hover:shadow-xl hover:scale-105 cursor-pointer">
             <div className="flex items-center mb-3">
               <span className="bg-blue-100 p-2 rounded-full mr-3">
                 <Package className="h-5 w-5 text-blue-600" />
@@ -846,7 +846,7 @@ export default function Dashboard() {
             </div>
           </div>
           {/* Modern Analytics Card (real metrics only) */}
-          <div className="bg-white rounded-xl shadow p-6 flex flex-col border border-gray-100 max-w-sm mx-auto mb-8">
+          <div className="bg-white rounded-xl shadow p-6 flex flex-col border-2 border-black max-w-sm mx-auto mb-8 transition-all duration-300 hover:bg-gradient-to-br hover:from-blue-100 hover:to-cyan-100 hover:shadow-xl hover:scale-105 cursor-pointer">
             {/* Pending Packages */}
             <div className="flex items-center mb-4">
               <span className="bg-yellow-100 p-2 rounded-full mr-3">
@@ -968,7 +968,7 @@ export default function Dashboard() {
             </div>
           </div>
           {/* Recent Activity - prominent */}
-          <div className="bg-white rounded-xl shadow p-4 flex flex-col border border-gray-100">
+          <div className="bg-white rounded-xl shadow p-4 flex flex-col border-2 border-black transition-all duration-300 hover:bg-gradient-to-br hover:from-blue-100 hover:to-cyan-100 hover:shadow-xl hover:scale-105 cursor-pointer">
             <div className="flex items-center mb-3">
               <span className="bg-gray-200 p-2 rounded-full mr-3">📝</span>
               <div className="text-lg font-bold text-gray-800">
@@ -1039,16 +1039,41 @@ export default function Dashboard() {
             className="space-y-6"
           >
             <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="packages">Packages</TabsTrigger>
-              <TabsTrigger value="fleet">Fleet</TabsTrigger>
-              <TabsTrigger value="assignments">Assignments</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
-              <TabsTrigger value="operations">Operations</TabsTrigger>
+              <TabsTrigger
+                value="packages"
+                className="transition-all duration-300 hover:bg-gradient-to-r hover:from-orange-300 hover:to-yellow-200 hover:text-orange-800 hover:scale-105"
+              >
+                Packages
+              </TabsTrigger>
+              <TabsTrigger
+                value="fleet"
+                className="transition-all duration-300 hover:bg-gradient-to-r hover:from-orange-300 hover:to-yellow-200 hover:text-orange-800 hover:scale-105"
+              >
+                Fleet
+              </TabsTrigger>
+              <TabsTrigger
+                value="assignments"
+                className="transition-all duration-300 hover:bg-gradient-to-r hover:from-orange-300 hover:to-yellow-200 hover:text-orange-800 hover:scale-105"
+              >
+                Assignments
+              </TabsTrigger>
+              <TabsTrigger
+                value="analytics"
+                className="transition-all duration-300 hover:bg-gradient-to-r hover:from-orange-300 hover:to-yellow-200 hover:text-orange-800 hover:scale-105"
+              >
+                Analytics
+              </TabsTrigger>
+              <TabsTrigger
+                value="operations"
+                className="transition-all duration-300 hover:bg-gradient-to-r hover:from-orange-300 hover:to-yellow-200 hover:text-orange-800 hover:scale-105"
+              >
+                Operations
+              </TabsTrigger>
             </TabsList>
 
             {/* Packages Tab */}
             <TabsContent value="packages">
-              <Card>
+              <Card className="border-2 border-black">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle>Package Management</CardTitle>
                   <div className="flex gap-2">
@@ -1206,7 +1231,7 @@ export default function Dashboard() {
 
             {/* Fleet Tab */}
             <TabsContent value="fleet">
-              <Card>
+              <Card className="border-2 border-black">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle>Fleet Management</CardTitle>
                   <Button onClick={() => setShowFleetModal(true)}>
@@ -1352,7 +1377,7 @@ export default function Dashboard() {
             {/* Assignments Tab */}
             <TabsContent value="assignments">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
+                <Card className="border-2 border-black">
                   <CardHeader>
                     <CardTitle>Unassigned Packages</CardTitle>
                   </CardHeader>
@@ -1395,7 +1420,7 @@ export default function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="border-2 border-black">
                   <CardHeader>
                     <CardTitle>Active Assignments</CardTitle>
                   </CardHeader>
