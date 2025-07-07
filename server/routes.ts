@@ -56,13 +56,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/packages", async (req, res) => {
     try {
       const validatedData = insertPackageSchema.parse(req.body);
-
+      console.log("Validated package data:", validatedData);
+      if (!validatedData.status) {
+        validatedData.status = "Pending";
+      }
       // Check if package ID already exists
       const existing = await storage.getPackage(validatedData.id);
       if (existing) {
         return res.status(400).json({ error: "Package ID already exists" });
       }
-
       const packageData = await storage.createPackage(validatedData);
       res.status(201).json(packageData);
     } catch (error) {

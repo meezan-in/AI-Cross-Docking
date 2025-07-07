@@ -13,10 +13,10 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Package, 
-  Truck, 
-  Clock, 
+import {
+  Package,
+  Truck,
+  Clock,
   Route,
   Plus,
   ChartLine,
@@ -82,6 +82,15 @@ ChartJS.register(
   Legend
 );
 
+// Add global type declarations at the top
+// @ts-ignore
+declare global {
+  interface Window {
+    __ASSIGNMENTS__?: any[];
+    __PACKAGES__?: any[];
+  }
+}
+
 // CountdownTimer component
 function CountdownTimer({ assignmentId }: { assignmentId: string }) {
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -92,46 +101,60 @@ function CountdownTimer({ assignmentId }: { assignmentId: string }) {
     let interval: NodeJS.Timeout | null = null;
     let end: number | null = null;
     const storageKey = `eta_end_${assignmentId}`;
+    const assignments = window.__ASSIGNMENTS__ || [];
+    const packages = window.__PACKAGES__ || [];
+    const assignment = assignments.find((a: any) => a.id === assignmentId);
+    if (!assignment) return;
+    // Only start ETA if assignment is Dispatched or In Transit
+    if (
+      assignment.status !== "Dispatched" &&
+      assignment.status !== "In Transit"
+    ) {
+      setRemaining(null);
+      setEta(null);
+      return;
+    }
+    const pkg = packages.find((p: any) => p.id === assignment.packageId);
+    if (!pkg) return;
+    if (!assignment.distance || assignment.distance === 0) {
+      setDistanceZero(true);
+      setRemaining(null);
+      return;
+    }
+    setDistanceZero(false);
+    // Try to get end time from localStorage
+    const storedEnd = localStorage.getItem(storageKey);
+    if (storedEnd) {
+      end = parseInt(storedEnd, 10);
+      setRemaining(Math.max(0, end - Date.now()));
+      interval = setInterval(() => {
+        setRemaining(Math.max(0, end! - Date.now()));
+      }, 1000);
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    }
+    // Prepare features for ETA model: [distance_km, weight, priority_num, traffic_level]
+    const priorityMap: Record<string, number> = {
+      Low: 0,
+      Medium: 1,
+      High: 2,
+      Urgent: 3,
+    };
+    const features = [
+      assignment.distance || 0,
+      pkg.weight || 0,
+      priorityMap[String(pkg.priority)] || 0,
+      2, // traffic_level: 2 = normal (default)
+    ];
     const fetchEta = async () => {
-      const assignments = window.__ASSIGNMENTS__ || [];
-      const packages = window.__PACKAGES__ || [];
-      const assignment = assignments.find((a: any) => a.id === assignmentId);
-      if (!assignment) return;
-      const pkg = packages.find((p: any) => p.id === assignment.packageId);
-      if (!pkg) return;
-      if (!assignment.distance || assignment.distance === 0) {
-        setDistanceZero(true);
-        setRemaining(null);
-        return;
-      }
-      setDistanceZero(false);
-      // Try to get end time from localStorage
-      const storedEnd = localStorage.getItem(storageKey);
-      if (storedEnd) {
-        end = parseInt(storedEnd, 10);
-        setRemaining(Math.max(0, end - Date.now()));
-        interval = setInterval(() => {
-          setRemaining(Math.max(0, end! - Date.now()));
-        }, 1000);
-        return;
-      }
-      // Prepare features for ETA model: [distance_km, weight, priority_num, traffic_level]
-      const priorityMap = { Low: 0, Medium: 1, High: 2, Urgent: 3 };
-      const features = [
-        assignment.distance || 0,
-        pkg.weight || 0,
-        priorityMap[pkg.priority] || 0,
-        2, // traffic_level: 2 = normal (default)
-      ];
       try {
-        console.log("[ETA] Request features:", features);
         const response = await fetch("/api/predict-eta", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ features }),
         });
         const result = await response.json();
-        console.log("[ETA] Response:", result);
         if (response.ok && result.eta_minutes) {
           setEta(result.eta_minutes * 60 * 1000); // convert minutes to ms
           end = Date.now() + result.eta_minutes * 60 * 1000;
@@ -142,19 +165,9 @@ function CountdownTimer({ assignmentId }: { assignmentId: string }) {
           }, 1000);
         } else {
           setEta(null);
-          toast({
-            title: "ETA Prediction Failed",
-            description: result.error || "No ETA returned from backend.",
-            variant: "destructive",
-          });
         }
       } catch (e) {
         setEta(null);
-        toast({
-          title: "ETA Prediction Error",
-          description: String(e),
-          variant: "destructive",
-        });
       }
     };
     fetchEta();
@@ -163,6 +176,19 @@ function CountdownTimer({ assignmentId }: { assignmentId: string }) {
     };
   }, [assignmentId]);
 
+  const assignments = window.__ASSIGNMENTS__ || [];
+  const assignment = assignments.find((a: any) => a.id === assignmentId);
+  if (
+    !assignment ||
+    (assignment.status !== "Dispatched" && assignment.status !== "In Transit")
+  ) {
+    return (
+      <span className="inline-flex items-center font-mono text-xs bg-gray-100 text-gray-500 px-3 py-1 rounded-full font-semibold border border-gray-300">
+        <Clock className="h-4 w-4 mr-1 text-gray-400" />
+        Not yet dispatched
+      </span>
+    );
+  }
   if (distanceZero)
     return (
       <span className="inline-flex items-center font-mono text-xs bg-gray-100 text-gray-500 px-3 py-1 rounded-full font-semibold border border-gray-300">
@@ -209,8 +235,8 @@ function TestSwitch() {
   );
 }
 
-// Helper to handle 401 Unauthorized globally in fetch responses
-async function handleAuthResponse(res) {
+// Fix handleAuthResponse parameter type
+async function handleAuthResponse(res: Response) {
   if (res.status === 401) {
     toast({
       title: "Session expired",
@@ -262,19 +288,31 @@ export default function Dashboard() {
   const [editTaskModalOpen, setEditTaskModalOpen] = useState(false);
   const [editTask, setEditTask] = useState<any>(null);
 
-  const { data: packages = [], refetch: refetchPackages } = useQuery<
-    PackageType[]
-  >({
+  const {
+    data: packages,
+    isLoading: packagesLoading,
+    isError: packagesError,
+    refetch: refetchPackages,
+  } = useQuery<PackageType[]>({
     queryKey: ["/api/packages"],
+    refetchInterval: 3000,
   });
 
-  const { data: fleet = [], refetch: refetchFleet } = useQuery<Fleet[]>({
+  const {
+    data: fleet,
+    isLoading: fleetLoading,
+    isError: fleetError,
+    refetch: refetchFleet,
+  } = useQuery<Fleet[]>({
     queryKey: ["/api/fleet"],
   });
 
-  const { data: assignments = [], refetch: refetchAssignments } = useQuery<
-    Assignment[]
-  >({
+  const {
+    data: assignments,
+    isLoading: assignmentsLoading,
+    isError: assignmentsError,
+    refetch: refetchAssignments,
+  } = useQuery<Assignment[]>({
     queryKey: ["/api/assignments"],
   });
 
@@ -319,21 +357,25 @@ export default function Dashboard() {
     return colors[status as keyof typeof colors] || "bg-gray-100 text-gray-800";
   };
 
-  const totalPackages = packages.length;
-  const activeFleet = fleet.filter(
+  const safePackages = packages ?? [];
+  const safeFleet = fleet ?? [];
+  const safeAssignments = assignments ?? [];
+
+  const totalPackages = safePackages.length;
+  const activeFleet = safeFleet.filter(
     (f) => f.status === "Available" || f.status === "Partially Loaded"
   ).length;
-  const pendingAssignments = packages.filter(
+  const pendingAssignments = safePackages.filter(
     (p) => p.status === "Pending"
   ).length;
-  const routesOptimized = assignments.length;
+  const routesOptimized = safeAssignments.length;
 
   // Before rendering assignments, set window.__ASSIGNMENTS__ and window.__PACKAGES__
-  window.__ASSIGNMENTS__ = assignments;
-  window.__PACKAGES__ = packages;
+  window.__ASSIGNMENTS__ = safeAssignments;
+  window.__PACKAGES__ = safePackages;
 
   const handleBulkAIAssign = async () => {
-    const unassigned = packages.filter((p) => p.status === "Pending");
+    const unassigned = safePackages.filter((p) => p.status === "Pending");
     if (unassigned.length === 0) {
       toast({
         title: "No unassigned packages",
@@ -354,11 +396,11 @@ export default function Dashboard() {
         const response = await fetch("/api/assign-fleet", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fleets: fleet, package: pkg }),
+          body: JSON.stringify({ fleets: safeFleet, package: pkg }),
         });
         if (response.ok) {
           const result = await response.json();
-          const bestFleet = fleet[result.best_fleet_index];
+          const bestFleet = safeFleet[result.best_fleet_index];
           if (bestFleet) {
             // Robust city validation and fallback with normalization
             let fromCityRaw = bestFleet.currentLocation;
@@ -495,21 +537,34 @@ export default function Dashboard() {
     }
   }, [activeTab]);
 
+  // Status helpers with fallback for unknown/legacy values
+  const isAssignmentInTransit = (status: string) =>
+    status === "In Transit" || status === "Assigned";
+  const isAssignmentDelivered = (status: string) => status === "Delivered";
+  const isAssignmentCancelled = (status: string) => status === "Cancelled";
+  const getAssignmentStatusLabel = (status: string) => {
+    if (isAssignmentDelivered(status)) return "Delivered";
+    if (isAssignmentInTransit(status)) return "In Transit/Assigned";
+    if (isAssignmentCancelled(status)) return "Cancelled";
+    // Fallback for unknown/legacy status values
+    return status || "Unknown";
+  };
+
   // Active Deliveries: assignments with status 'In Transit' or 'Assigned'
-  const activeDeliveries = assignments.filter(
-    (a) => a.status === "In Transit" || a.status === "Assigned"
+  const activeDeliveries = safeAssignments.filter((a) =>
+    isAssignmentInTransit(a.status)
   ).length;
 
-  // Fleet Utilization: % of fleet in use (has at least one assignment)
-  const fleetInUse = fleet.filter((f) =>
-    assignments.some(
-      (a) =>
-        a.fleetId === f.id &&
-        (a.status === "In Transit" || a.status === "Assigned")
+  // Fix fleet utilization assignment status comparison
+  const fleetInUse = safeFleet.filter((f) =>
+    safeAssignments.some(
+      (a) => a.fleetId === f.id && isAssignmentInTransit(a.status)
     )
   ).length;
   const fleetUtilization =
-    fleet.length > 0 ? Math.round((fleetInUse / fleet.length) * 100) : 0;
+    safeFleet.length > 0
+      ? Math.round((fleetInUse / safeFleet.length) * 100)
+      : 0;
 
   // Recent Error/Alert: last destructive toast
   const lastError = toasts.find((t) => t.variant === "destructive");
@@ -525,30 +580,33 @@ export default function Dashboard() {
   }
 
   // For enhanced recent activity, add timestamps if available
-  const recentActionsDetailed = assignments
+  const recentActionsDetailed = safeAssignments
     .slice()
     .sort((a, b) => {
-      if (a.updatedAt && b.updatedAt) {
-        return (
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        );
-      }
-      return (b.id || "").localeCompare(a.id || "");
+      // Fallback for missing updatedAt
+      const aTime = (a as any).updatedAt
+        ? new Date((a as any).updatedAt).getTime()
+        : 0;
+      const bTime = (b as any).updatedAt
+        ? new Date((b as any).updatedAt).getTime()
+        : 0;
+      return bTime - aTime;
     })
     .slice(0, 5)
     .map((a) => {
       let icon = "";
       let color = "";
       let text = "";
-      if (a.status === "Delivered") {
+      // TODO: Handle legacy/unknown status values
+      if (isAssignmentDelivered(a.status)) {
         icon = "✅";
         color = "text-green-600";
         text = `Package ${a.packageId} delivered by Fleet ${a.fleetId}`;
-      } else if (a.status === "Assigned" || a.status === "In Transit") {
+      } else if (isAssignmentInTransit(a.status)) {
         icon = "🚚";
         color = "text-blue-600";
         text = `Package ${a.packageId} assigned to Fleet ${a.fleetId}`;
-      } else if (a.status === "Cancelled") {
+      } else if (isAssignmentCancelled(a.status)) {
         icon = "❌";
         color = "text-red-600";
         text = `Assignment for Package ${a.packageId} cancelled`;
@@ -557,17 +615,19 @@ export default function Dashboard() {
         color = "text-gray-600";
         text = `Assignment for Package ${a.packageId} (${a.status})`;
       }
-      const time = a.updatedAt ? new Date(a.updatedAt).toLocaleString() : "";
+      const time = (a as any).updatedAt
+        ? new Date((a as any).updatedAt).toLocaleString()
+        : "";
       return { icon, color, text, time };
     });
 
   // Calculate delivery success rate and average delivery time if possible
-  const deliveredAssignments = assignments.filter(
-    (a) => a.status === "Delivered"
+  const deliveredAssignments = safeAssignments.filter((a) =>
+    isAssignmentDelivered(a.status)
   );
   const deliverySuccessRate =
-    assignments.length > 0
-      ? Math.round((deliveredAssignments.length / assignments.length) * 100)
+    safeAssignments.length > 0
+      ? Math.round((deliveredAssignments.length / safeAssignments.length) * 100)
       : null;
   // Placeholder for average delivery time (if ETA or timestamps available)
   const averageDeliveryTime = null; // You can calculate if you have timestamps
@@ -576,8 +636,8 @@ export default function Dashboard() {
   const errors24h = toasts.filter(
     (t) =>
       t.variant === "destructive" &&
-      t.time &&
-      now - new Date(t.time).getTime() < 24 * 60 * 60 * 1000
+      (t as any).time &&
+      now - new Date((t as any).time).getTime() < 24 * 60 * 60 * 1000
   );
   // Next scheduled task countdown
   let nextTaskCountdown = null;
@@ -615,7 +675,7 @@ export default function Dashboard() {
       toast({
         title: "All Packages Deleted",
         description: "All packages have been deleted successfully.",
-        variant: "success",
+        variant: "default",
       });
       refetchAll();
     } catch (err) {
@@ -670,7 +730,7 @@ export default function Dashboard() {
       toast({
         title: "Task Deleted",
         description: "Scheduled task deleted successfully.",
-        variant: "success",
+        variant: "default",
       });
     } catch (err) {
       toast({
@@ -722,7 +782,7 @@ export default function Dashboard() {
       toast({
         title: "Task Updated",
         description: "Scheduled task updated successfully.",
-        variant: "success",
+        variant: "default",
       });
     } catch (err) {
       toast({
@@ -752,7 +812,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-        
+
         {/* Analytics Panel in Sidebar */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {/* Key Stats */}
@@ -764,8 +824,8 @@ export default function Dashboard() {
               <div>
                 <div className="text-xs text-gray-500">Total Packages</div>
                 <div className="text-xl font-bold">{totalPackages}</div>
-          </div>
-          </div>
+              </div>
+            </div>
             <div className="flex items-center mb-3">
               <span className="bg-green-100 p-2 rounded-full mr-3">
                 <Truck className="h-5 w-5 text-green-600" />
@@ -773,142 +833,131 @@ export default function Dashboard() {
               <div>
                 <div className="text-xs text-gray-500">Active Fleet</div>
                 <div className="text-xl font-bold">{activeFleet}</div>
-          </div>
-          </div>
+              </div>
+            </div>
             <div className="flex items-center mb-3">
-              <span className="bg-yellow-100 p-2 rounded-full mr-3">
-                <Clock className="h-5 w-5 text-yellow-600" />
-              </span>
-              <div>
-                <div className="text-xs text-gray-500">Pending Assignments</div>
-                <div className="text-xl font-bold">{pendingAssignments}</div>
-          </div>
-          </div>
-            <div className="flex items-center">
               <span className="bg-purple-100 p-2 rounded-full mr-3">
                 <Route className="h-5 w-5 text-purple-600" />
               </span>
               <div>
                 <div className="text-xs text-gray-500">Routes Optimized</div>
                 <div className="text-xl font-bold">{routesOptimized}</div>
+              </div>
             </div>
-            </div>
-            </div>
-          {/* Modern Analytics Card (replace old card) */}
+          </div>
+          {/* Modern Analytics Card (real metrics only) */}
           <div className="bg-white rounded-xl shadow p-6 flex flex-col border border-gray-100 max-w-sm mx-auto mb-8">
+            {/* Pending Packages */}
             <div className="flex items-center mb-4">
-              <span className="bg-blue-100 p-2 rounded-full mr-3">
-                <span role="img" aria-label="truck">
-                  🚚
-                </span>
+              <span className="bg-yellow-100 p-2 rounded-full mr-3">
+                <Clock className="h-5 w-5 text-yellow-600" />
               </span>
               <div className="flex-1">
-                <div className="text-xs text-gray-500">Active Deliveries</div>
-                <div className="text-2xl font-bold flex items-center gap-2">
-                  {activeDeliveries}{" "}
-                  <span className="text-green-500 text-base">
-                    {/* ↑ or ↓ trend placeholder */}
-                  </span>
+                <div className="text-xs text-gray-500">Pending Packages</div>
+                <div className="text-2xl font-bold">
+                  {safePackages.filter((p) => p.status === "Pending").length}
                 </div>
               </div>
             </div>
+            {/* Assigned Packages */}
+            <div className="flex items-center mb-4">
+              <span className="bg-blue-100 p-2 rounded-full mr-3">
+                <Send className="h-5 w-5 text-blue-600" />
+              </span>
+              <div className="flex-1">
+                <div className="text-xs text-gray-500">Assigned Packages</div>
+                <div className="text-2xl font-bold">
+                  {safePackages.filter((p) => p.status === "Assigned").length}
+                </div>
+              </div>
+            </div>
+            {/* In Transit Packages */}
+            <div className="flex items-center mb-4">
+              <span className="bg-purple-100 p-2 rounded-full mr-3">
+                <Truck className="h-5 w-5 text-purple-600" />
+              </span>
+              <div className="flex-1">
+                <div className="text-xs text-gray-500">In Transit Packages</div>
+                <div className="text-2xl font-bold">
+                  {safePackages.filter((p) => p.status === "In Transit").length}
+                </div>
+              </div>
+            </div>
+            {/* Delivered Packages */}
             <div className="flex items-center mb-4">
               <span className="bg-green-100 p-2 rounded-full mr-3">
-                <span role="img" aria-label="chart">
-                  ��
-                </span>
+                <Package className="h-5 w-5 text-green-600" />
+              </span>
+              <div className="flex-1">
+                <div className="text-xs text-gray-500">Delivered Packages</div>
+                <div className="text-2xl font-bold">
+                  {safePackages.filter((p) => p.status === "Delivered").length}
+                </div>
+              </div>
+            </div>
+            {/* Fleet Fill Rate */}
+            <div className="flex items-center mb-4">
+              <span className="bg-indigo-100 p-2 rounded-full mr-3">
+                <BarChart3 className="h-5 w-5 text-indigo-600" />
               </span>
               <div className="flex-1">
                 <div className="text-xs text-gray-500 flex justify-between">
-                  <span>Fleet Utilization</span>
-                  <span className="font-bold">{fleetUtilization}%</span>
+                  <span>Fleet Fill Rate</span>
+                  <span className="font-bold">
+                    {safeFleet.length > 0
+                      ? `${Math.round(
+                          (safeFleet.reduce(
+                            (sum, f) => sum + f.currentCapacityUsed,
+                            0
+                          ) /
+                            safeFleet.reduce((sum, f) => sum + f.capacity, 0)) *
+                            100
+                        )}%`
+                      : "N/A"}
+                  </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
                   <div
-                    className="bg-green-500 h-2 rounded-full transition-all"
-                    style={{ width: `${fleetUtilization}%` }}
+                    className="bg-indigo-500 h-2 rounded-full transition-all"
+                    style={{
+                      width: `${
+                        safeFleet.length > 0
+                          ? Math.round(
+                              (safeFleet.reduce(
+                                (sum, f) => sum + f.currentCapacityUsed,
+                                0
+                              ) /
+                                safeFleet.reduce(
+                                  (sum, f) => sum + f.capacity,
+                                  0
+                                )) *
+                                100
+                            )
+                          : 0
+                      }%`,
+                    }}
                   ></div>
                 </div>
-                <span
-                  className={`text-xs ml-1 ${
-                    fleetUtilization > 80
-                      ? "text-green-600"
-                      : fleetUtilization < 40
-                      ? "text-red-600"
-                      : "text-yellow-600"
-                  }`}
-                >
-                  {fleetUtilization > 80
-                    ? "Optimal"
-                    : fleetUtilization < 40
-                    ? "Underutilized"
-                    : "Moderate"}
-                </span>
               </div>
             </div>
-            <div className="flex items-center mb-4">
-              <span className="bg-indigo-100 p-2 rounded-full mr-3">
-                <span role="img" aria-label="check">
-                  ✅
-                </span>
-              </span>
-              <div className="flex-1">
-                <div className="text-xs text-gray-500">
-                  Delivery Success Rate
-                </div>
-                <div className="text-xl font-bold">
-                  {deliverySuccessRate !== null ? (
-                    `${deliverySuccessRate}%`
-                  ) : (
-                    <span className="text-gray-400">N/A</span>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center mb-4">
-              <span className="bg-yellow-100 p-2 rounded-full mr-3">
-                <span role="img" aria-label="timer">
-                  ⏱️
-                </span>
-              </span>
-              <div className="flex-1">
-                <div className="text-xs text-gray-500">Avg Delivery Time</div>
-                <div className="text-xl font-bold">
-                  {averageDeliveryTime !== null ? (
-                    averageDeliveryTime
-                  ) : (
-                    <span className="text-gray-400">N/A</span>
-                  )}
-                </div>
-              </div>
-            </div>
+            {/* Delayed Assignments (N/A) */}
             <div className="flex items-center mb-4">
               <span className="bg-red-100 p-2 rounded-full mr-3">
-                <span role="img" aria-label="alert">
-                  ⚠️
-                </span>
+                <AlertTriangle className="h-5 w-5 text-red-600" />
               </span>
               <div className="flex-1">
-                <div className="text-xs text-gray-500">Errors (24h)</div>
-                <div className="text-xl font-bold text-red-600">
-                  {errors24h.length}{" "}
-                  <span className="text-xs text-gray-400 ml-2">
-                    {lastError
-                      ? lastError.title || lastError.description
-                      : "None"}
-                  </span>
-                </div>
+                <div className="text-xs text-gray-500">Delayed Assignments</div>
+                <div className="text-2xl font-bold">N/A</div>
               </div>
             </div>
+            {/* Next Scheduled Task */}
             <div className="flex items-center">
               <span className="bg-pink-100 p-2 rounded-full mr-3">
-                <span role="img" aria-label="clock">
-                  ⏰
-                </span>
+                <Clock className="h-5 w-5 text-pink-600" />
               </span>
               <div className="flex-1">
                 <div className="text-xs text-gray-500">Next Scheduled Task</div>
-                <div className="text-xl font-bold">
+                <div className="text-2xl font-bold">
                   {nextTaskCountdown ? (
                     nextTaskCountdown
                   ) : (
@@ -969,8 +1018,8 @@ export default function Dashboard() {
               <div className="text-sm text-primary">
                 Interdisciplinary Project | RVCE
               </div>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={logout}
                 className="flex items-center space-x-2"
@@ -1012,16 +1061,16 @@ export default function Dashboard() {
                     </Button>
                     <Button
                       onClick={handleBulkAIAssign}
-                      variant="success"
+                      variant="default"
                       className="flex items-center bg-green-500 hover:bg-green-600 text-white border-none"
                     >
                       <Bot className="h-4 w-4 mr-1 animate-bounce" />
                       Assign All with AI
                     </Button>
-                  <Button onClick={() => setShowPackageModal(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Package
-                  </Button>
+                    <Button onClick={() => setShowPackageModal(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Package
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -1034,14 +1083,39 @@ export default function Dashboard() {
                           <TableHead>Weight (kg)</TableHead>
                           <TableHead>Priority</TableHead>
                           <TableHead>Status</TableHead>
+                          <TableHead>Entry</TableHead>
                           <TableHead>Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {packages.length === 0 ? (
+                        {packagesLoading ? (
                           <TableRow>
                             <TableCell
-                              colSpan={6}
+                              colSpan={7}
+                              className="text-center py-8 text-muted-foreground"
+                            >
+                              Loading packages...
+                            </TableCell>
+                          </TableRow>
+                        ) : packagesError ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={7}
+                              className="text-center py-8 text-red-500"
+                            >
+                              Failed to load packages.{" "}
+                              <Button
+                                onClick={() => refetchPackages()}
+                                size="sm"
+                              >
+                                Retry
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ) : !safePackages || safePackages.length === 0 ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={7}
                               className="text-center py-8 text-muted-foreground"
                             >
                               <Package className="h-8 w-8 mx-auto mb-2" />
@@ -1049,33 +1123,59 @@ export default function Dashboard() {
                             </TableCell>
                           </TableRow>
                         ) : (
-                          packages.map((pkg) => (
-                            <TableRow key={pkg.id}>
+                          safePackages.map((pkg) => (
+                            <TableRow key={pkg?.id || Math.random()}>
                               <TableCell className="font-medium">
-                                {pkg.id}
+                                {pkg?.id || (
+                                  <span className="text-red-500">Invalid</span>
+                                )}
                               </TableCell>
-                              <TableCell>{pkg.destination}</TableCell>
-                              <TableCell>{pkg.weight}</TableCell>
-                              <TableCell>{pkg.priority}</TableCell>
                               <TableCell>
-                                <Badge className={getStatusColor(pkg.status)}>
-                                  {pkg.status}
+                                {pkg?.destination || (
+                                  <span className="text-red-500">Missing</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {pkg?.weight ?? (
+                                  <span className="text-red-500">Missing</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {pkg?.priority || (
+                                  <span className="text-red-500">Missing</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge className={getStatusColor(pkg?.status)}>
+                                  {getAssignmentStatusLabel(pkg?.status)}
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                {pkg.status === "Pending" && (
-                                  <Button 
-                                    variant="outline" 
+                                <Badge
+                                  className={
+                                    pkg?.source === "rfid"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-gray-100 text-gray-800"
+                                  }
+                                >
+                                  {pkg?.source === "rfid" ? "RFID" : "Manual"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {pkg?.status === "Pending" && (
+                                  <Button
+                                    variant="outline"
                                     size="sm"
                                     onClick={() => handlePackageAssign(pkg.id)}
                                     className="mr-2"
+                                    disabled={!pkg?.id}
                                   >
                                     <Route className="h-4 w-4 mr-1" />
                                     Assign
                                   </Button>
                                 )}
-                                <Button 
-                                  variant="destructive" 
+                                <Button
+                                  variant="destructive"
                                   size="sm"
                                   onClick={async () => {
                                     if (
@@ -1089,6 +1189,7 @@ export default function Dashboard() {
                                       refetchAll();
                                     }
                                   }}
+                                  disabled={!pkg?.id}
                                 >
                                   Delete
                                 </Button>
@@ -1127,7 +1228,28 @@ export default function Dashboard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {fleet.length === 0 ? (
+                        {fleetLoading ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={6}
+                              className="text-center py-8 text-muted-foreground"
+                            >
+                              Loading fleet...
+                            </TableCell>
+                          </TableRow>
+                        ) : fleetError ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={6}
+                              className="text-center py-8 text-red-500"
+                            >
+                              Failed to load fleet.{" "}
+                              <Button onClick={() => refetchFleet()} size="sm">
+                                Retry
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ) : !safeFleet || safeFleet.length === 0 ? (
                           <TableRow>
                             <TableCell
                               colSpan={6}
@@ -1138,13 +1260,13 @@ export default function Dashboard() {
                             </TableCell>
                           </TableRow>
                         ) : (
-                          fleet.map((f) => {
+                          safeFleet.map((f) => {
                             const capacityPercentage =
                               (f.currentCapacityUsed / f.capacity) * 100;
-                            const hasAssignments = assignments.some(
+                            const hasAssignments = safeAssignments.some(
                               (a) => a.fleetId === f.id
                             );
-                            
+
                             return (
                               <TableRow key={f.id}>
                                 <TableCell className="font-medium">
@@ -1176,7 +1298,7 @@ export default function Dashboard() {
                                 </TableCell>
                                 <TableCell>
                                   <Badge className={getStatusColor(f.status)}>
-                                    {f.status}
+                                    {getAssignmentStatusLabel(f.status)}
                                   </Badge>
                                 </TableCell>
                                 <TableCell>
@@ -1184,20 +1306,20 @@ export default function Dashboard() {
                                     {hasAssignments &&
                                       (f.status === "Partially Loaded" ||
                                         f.status === "Fully Loaded") && (
-                                      <Button 
-                                        variant="outline" 
-                                        size="sm"
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
                                           onClick={() =>
                                             handleFleetDispatch(f.id)
                                           }
-                                        className="bg-green-50 hover:bg-green-100"
-                                      >
-                                        <Send className="h-4 w-4 mr-1" />
-                                        Dispatch
-                                      </Button>
-                                    )}
-                                    <Button 
-                                      variant="destructive" 
+                                          className="bg-green-50 hover:bg-green-100"
+                                        >
+                                          <Send className="h-4 w-4 mr-1" />
+                                          Dispatch
+                                        </Button>
+                                      )}
+                                    <Button
+                                      variant="destructive"
                                       size="sm"
                                       onClick={async () => {
                                         if (
@@ -1236,38 +1358,38 @@ export default function Dashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {packages.filter((p) => p.status === "Pending").length ===
-                      0 ? (
+                      {safePackages.filter((p) => p.status === "Pending")
+                        .length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                           <Package className="h-8 w-8 mx-auto mb-2" />
                           <p>No unassigned packages</p>
                         </div>
                       ) : (
-                        packages
+                        safePackages
                           .filter((p) => p.status === "Pending")
                           .map((pkg) => (
                             <div
                               key={pkg.id}
                               className="bg-muted p-4 rounded-lg flex justify-between items-center"
                             >
-                            <div>
-                              <p className="font-medium">{pkg.id}</p>
-                              <p className="text-sm text-muted-foreground">
+                              <div>
+                                <p className="font-medium">{pkg.id}</p>
+                                <p className="text-sm text-muted-foreground">
                                   {pkg.destination} • {pkg.weight}kg •{" "}
                                   {pkg.priority}
-                              </p>
+                                </p>
+                              </div>
+                              <div className="space-x-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handlePackageAssign(pkg.id)}
+                                >
+                                  <Route className="h-4 w-4" />
+                                </Button>
+                              </div>
                             </div>
-                            <div className="space-x-2">
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={() => handlePackageAssign(pkg.id)}
-                              >
-                                <Route className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))
+                          ))
                       )}
                     </div>
                   </CardContent>
@@ -1279,20 +1401,34 @@ export default function Dashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {assignments.length === 0 ? (
+                      {assignmentsLoading ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          Loading assignments...
+                        </div>
+                      ) : assignmentsError ? (
+                        <div className="text-center py-8 text-red-500">
+                          Failed to load assignments.{" "}
+                          <Button
+                            onClick={() => refetchAssignments()}
+                            size="sm"
+                          >
+                            Retry
+                          </Button>
+                        </div>
+                      ) : !safeAssignments || safeAssignments.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                           <Route className="h-8 w-8 mx-auto mb-2" />
                           <p>No active assignments</p>
                         </div>
                       ) : (
-                        assignments.map((assignment) => {
-                          const pkg = packages.find(
+                        safeAssignments.map((assignment) => {
+                          const pkg = safePackages.find(
                             (p) => p.id === assignment.packageId
                           );
-                          const fleetVehicle = fleet.find(
+                          const fleetVehicle = safeFleet.find(
                             (f) => f.id === assignment.fleetId
                           );
-                          
+
                           return (
                             <div
                               key={assignment.id}
@@ -1309,9 +1445,9 @@ export default function Dashboard() {
                               </div>
                               <div className="space-x-2 flex items-center">
                                 <CountdownTimer assignmentId={assignment.id} />
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm"
+                                <Button
+                                  variant="outline"
+                                  size="sm"
                                   className="ml-1"
                                 >
                                   Sync with Real GPS
@@ -1328,8 +1464,8 @@ export default function Dashboard() {
                                     <Activity className="h-4 w-4" />
                                   </Button>
                                 )}
-                                <Button 
-                                  variant="destructive" 
+                                <Button
+                                  variant="destructive"
                                   size="sm"
                                   onClick={async () => {
                                     if (
@@ -1369,11 +1505,11 @@ export default function Dashboard() {
                     <div className="bg-muted rounded-lg p-4">
                       <div className="text-sm text-muted-foreground">
                         Total Packages
-                        </div>
+                      </div>
                       <div className="text-2xl font-bold">
                         {analytics.totalPackages}
-                            </div>
-                          </div>
+                      </div>
+                    </div>
                     <div className="bg-muted rounded-lg p-4">
                       <div className="text-sm text-muted-foreground">
                         Delivered
@@ -1433,7 +1569,7 @@ export default function Dashboard() {
                       scales: { y: { beginAtZero: true } },
                     }}
                   />
-                    </div>
+                </div>
                 <button
                   className="bg-primary text-white px-4 py-2 rounded font-semibold hover:bg-primary/90 transition"
                   onClick={() => {
@@ -1476,7 +1612,7 @@ export default function Dashboard() {
                   >
                     Scheduled Tasks
                   </button>
-                        </div>
+                </div>
                 {operationsTab === "import" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {/* Bulk Import/Export Card */}
@@ -1538,14 +1674,15 @@ export default function Dashboard() {
                             );
                             const data = await res.json();
                             setImportResults(data.results || []);
+                            const importedCount =
+                              data.results?.filter(
+                                (r: { status: string }) =>
+                                  r.status === "imported"
+                              ).length || 0;
                             toast({
                               title: "Import Successful",
-                              description: `Imported ${
-                                data.results?.filter(
-                                  (r) => r.status === "imported"
-                                ).length || 0
-                              } packages.`,
-                              variant: "success",
+                              description: `Imported ${importedCount} packages.`,
+                              variant: "default",
                             });
                             refetchAll();
                           } catch (err) {
@@ -1595,7 +1732,7 @@ export default function Dashboard() {
                               </li>
                             ))}
                           </ul>
-                          </div>
+                        </div>
                       )}
                       <div className="flex flex-col md:flex-row gap-2 mt-4">
                         <button
@@ -1624,7 +1761,7 @@ export default function Dashboard() {
                                 title: "Export Successful",
                                 description:
                                   "Your CSV export has been downloaded.",
-                                variant: "success",
+                                variant: "default",
                               });
                             } catch (err) {
                               toast({
@@ -1648,7 +1785,7 @@ export default function Dashboard() {
                         >
                           <Trash2 className="h-4 w-4" /> Delete All Packages
                         </button>
-                    </div>
+                      </div>
                       <p className="text-xs text-red-500 mt-2">
                         <AlertTriangle className="inline h-4 w-4 mr-1" />
                         <span>
@@ -1719,7 +1856,7 @@ export default function Dashboard() {
                           toast({
                             title: "Task Added",
                             description: "Scheduled task added successfully.",
-                            variant: "success",
+                            variant: "default",
                           });
                         } catch (err) {
                           toast({
@@ -1849,55 +1986,55 @@ export default function Dashboard() {
       </div>
 
       {/* Modals */}
-      <PackageModal 
-        open={showPackageModal} 
+      <PackageModal
+        open={showPackageModal}
         onOpenChange={setShowPackageModal}
         onSuccess={refetchAll}
       />
-      
-      <FleetModal 
-        open={showFleetModal} 
+
+      <FleetModal
+        open={showFleetModal}
         onOpenChange={setShowFleetModal}
         onSuccess={refetchAll}
       />
-      
-      <AssignmentModal 
-        open={showAssignmentModal} 
+
+      <AssignmentModal
+        open={showAssignmentModal}
         onOpenChange={setShowAssignmentModal}
         packageId={selectedPackageId}
-        packages={packages}
-        fleet={fleet}
+        packages={safePackages}
+        fleet={safeFleet}
         onSuccess={refetchAll}
         onOptimize={(packageId) => {
           setSelectedPackageId(packageId);
           setShowOptimizationModal(true);
         }}
       />
-      
-      <RouteOptimizationModal 
-        open={showOptimizationModal} 
+
+      <RouteOptimizationModal
+        open={showOptimizationModal}
         onOpenChange={setShowOptimizationModal}
         packageId={selectedPackageId}
         onSuccess={refetchAll}
       />
-      
-      <DispatchModal 
-        open={showDispatchModal} 
+
+      <DispatchModal
+        open={showDispatchModal}
         onOpenChange={setShowDispatchModal}
         assignmentId={selectedAssignmentId}
-        assignments={assignments}
-        packages={packages}
-        fleet={fleet}
+        assignments={safeAssignments}
+        packages={safePackages}
+        fleet={safeFleet}
         onSuccess={refetchAll}
       />
-      
-      <FleetDispatchModal 
-        open={showFleetDispatchModal} 
+
+      <FleetDispatchModal
+        open={showFleetDispatchModal}
         onOpenChange={setShowFleetDispatchModal}
         fleetId={selectedFleetId}
-        fleet={fleet}
-        assignments={assignments}
-        packages={packages}
+        fleet={safeFleet}
+        assignments={safeAssignments}
+        packages={safePackages}
         onSuccess={refetchAll}
       />
 

@@ -13,7 +13,7 @@ export interface IStorage {
   // Package operations
   getPackages(): Promise<Package[]>;
   getPackage(id: string): Promise<Package | null>;
-  createPackage(packageData: InsertPackage): Promise<Package>;
+  createPackage(packageData: any): Promise<Package>;
   updatePackage(id: string, updates: Partial<Package>): Promise<Package | null>;
   deletePackage(id: string): Promise<boolean>;
   deleteAllPackages(): Promise<number>;
@@ -114,9 +114,11 @@ export class MongoStorage implements IStorage {
       : null;
   }
 
-  async createPackage(packageData: InsertPackage): Promise<Package> {
+  async createPackage(packageData: any): Promise<Package> {
     const newPackage: Package = {
       ...packageData,
+      status: packageData.status || "Pending",
+      source: packageData.source || "manual",
       timestamp: new Date().toISOString(),
     };
 
