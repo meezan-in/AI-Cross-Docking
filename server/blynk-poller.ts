@@ -71,3 +71,5 @@ async function pollBlynkAndInsert() {
 }
 
 pollBlynkAndInsert();
+//added the blynk poller to the server
+console.log("[Blynk Poller] Started polling every 3 seconds");
